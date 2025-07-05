@@ -71,4 +71,14 @@ def stripe_webhook():
 
             data["keys"].append(license_key)
             f.seek(0)
+            json.dump(data, f, indent=2)
+            f.truncate()
 
+        print(f"✅ License key generated: {license_key}")
+
+    return "Webhook received", 200
+
+# Start the Flask server
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 4242))
+    app.run(host="0.0.0.0", port=port)
