@@ -1,54 +1,60 @@
-from flask import Flask, jsonify, request
-from flask_cors import CORS
 import os
 import json
-import random
-import string
+import stripe
+import secrets
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 from dotenv import load_dotenv
 
-# Load environment variables from .env
 load_dotenv()
-
 app = Flask(__name__)
 CORS(app)
 
-# Make sure license_keys.json exists and has the correct structure
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+
+# Create license_keys.json if it doesn't exist
 if not os.path.exists("license_keys.json"):
     with open("license_keys.json", "w") as f:
         json.dump({"keys": []}, f)
 
-# Generate a random license key
 def generate_random_license_key(length=16):
-    chars = string.ascii_uppercase + string.digits
-    return ''.join(random.choices(chars, k=length))
+    chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    return ''.join(secrets.choice(chars) for _ in range(length))
 
-# API endpoint to generate a new license key
-@app.route('/generate-license', methods=['POST'])
-def generate_license():
-    license_key = generate_random_license_key()
-
-    with open("license_keys.json", "r+") as f:
-        try:
-            data = json.load(f)
-        except json.JSONDecodeError:
-            data = {"keys": []}
-
-        if "keys" not in data:
-            data["keys"] = []
-
-        data["keys"].append(license_key)
-        f.seek(0)
-        json.dump(data, f, indent=2)
-        f.truncate()
-
-    return jsonify({"license_key": license_key})
-
-# Health check endpoint
 @app.route('/')
 def home():
-    return 'Smart Scheduler API is running!'
+    return "Smart Scheduler API is running!"
+
+@app.route('/webhook', methods=['POST'])
+def stripe_webhook():
+    payload = request.data
+    sig_header = request.headers.get("Stripe-Signature")
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
+    except stripe.error.SignatureVerificationError:
+        return "Webhook signature verification failed", 400
+
+    if event["type"] == "checkout.session.completed":
+        license_key = generate_random_license_key()
+
+        with open("license_keys.json", "r+") as f:
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError:
+                data = {"keys": []}
+
+            data["keys"].append(license_key)
+            f.seek(0)
+            json.dump(data, f, indent=2)
+            f.truncate()
+
+        print(f"✅ License key generated: {license_key}")
+
+    return "Webhook received", 200
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 4242))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host="0.0.0.0", port=port)
 
