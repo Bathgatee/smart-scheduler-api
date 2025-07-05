@@ -1,42 +1,54 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, jsonify, request
 from flask_cors import CORS
-from dotenv import load_dotenv
 import os
 import json
 import random
 import string
-import stripe
+from dotenv import load_dotenv
 
+# Load environment variables from .env
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-license_file = "license_keys.json"
-installer_path = "downloads"
-installer_filename = "SmartSchedulerInstaller_v1.exe"
+# Make sure license_keys.json exists and has the correct structure
+if not os.path.exists("license_keys.json"):
+    with open("license_keys.json", "w") as f:
+        json.dump({"keys": []}, f)
 
-def generate_license_key(length=16):
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+# Generate a random license key
+def generate_random_license_key(length=16):
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.choices(chars, k=length))
 
-@app.route("/generate-license", methods=["POST"])
+# API endpoint to generate a new license key
+@app.route('/generate-license', methods=['POST'])
 def generate_license():
-    key = generate_license_key()
-    if os.path.exists(license_file):
-        with open(license_file, "r") as f:
-            keys = json.load(f)
-    else:
-        keys = []
-    keys.append(key)
-    with open(license_file, "w") as f:
-        json.dump(keys, f)
-    return jsonify({"license_key": key})
+    license_key = generate_random_license_key()
 
-@app.route("/download", methods=["GET"])
-def download_file():
-    return send_from_directory(installer_path, installer_filename, as_attachment=True)
+    with open("license_keys.json", "r+") as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            data = {"keys": []}
 
-if __name__ == "__main__":
+        if "keys" not in data:
+            data["keys"] = []
+
+        data["keys"].append(license_key)
+        f.seek(0)
+        json.dump(data, f, indent=2)
+        f.truncate()
+
+    return jsonify({"license_key": license_key})
+
+# Health check endpoint
+@app.route('/')
+def home():
+    return 'Smart Scheduler API is running!'
+
+if __name__ == '__main__':
     port = int(os.environ.get("PORT", 4242))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host='0.0.0.0', port=port)
+
