@@ -6,10 +6,13 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 
+# Load environment variables from .env
 load_dotenv()
+
 app = Flask(__name__)
 CORS(app)
 
+# Stripe setup
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
 
@@ -18,14 +21,35 @@ if not os.path.exists("license_keys.json"):
     with open("license_keys.json", "w") as f:
         json.dump({"keys": []}, f)
 
+# Function to generate a random license key
 def generate_random_license_key(length=16):
     chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     return ''.join(secrets.choice(chars) for _ in range(length))
 
+# Health check route
 @app.route('/')
 def home():
     return "Smart Scheduler API is running!"
 
+# Manual license generation route
+@app.route('/generate-license', methods=['POST'])
+def generate_license():
+    license_key = generate_random_license_key()
+
+    with open("license_keys.json", "r+") as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            data = {"keys": []}
+
+        data["keys"].append(license_key)
+        f.seek(0)
+        json.dump(data, f, indent=2)
+        f.truncate()
+
+    return jsonify({"license_key": license_key})
+
+# Stripe webhook listener
 @app.route('/webhook', methods=['POST'])
 def stripe_webhook():
     payload = request.data
@@ -47,14 +71,4 @@ def stripe_webhook():
 
             data["keys"].append(license_key)
             f.seek(0)
-            json.dump(data, f, indent=2)
-            f.truncate()
-
-        print(f"✅ License key generated: {license_key}")
-
-    return "Webhook received", 200
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 4242))
-    app.run(host="0.0.0.0", port=port)
 
